@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Chat Assistant</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      body {
+        background-color: #1e1e2e;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+
+      .chat-container {
+        width: 450px;
+        height: 600px;
+        background-color: #252538;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      }
+      .chat-header {
+        background-color: #3b3b54;
+        color: #fff;
+        padding: 15px;
+        text-align: center;
+        font-weight: bold;
+        border-bottom: 1px solid #444;
+      }
+
+      .chat-box {
+        flex: 1;
+        padding: 15px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .message {
+        max-width: 80%;
+        padding: 10px 14px;
+        border-radius: 15px;
+        font-size: 14px;
+        line-height: 1.4;
+        word-wrap: break-word;
+      }
+      .user-msg {
+        background-color: #007bff;
+        color: white;
+        align-self: flex-end;
+        border-bottom-right-radius: 2px;
+      }
+      .bot-msg {
+        background-color: #3e3e56;
+        color: #e0e0e0;
+        align-self: flex-start;
+        border-bottom-left-radius: 2px;
+      }
+
+      .input-area {
+        display: flex;
+        padding: 12px;
+        background-color: #1e1e2e;
+        border-top: 1px solid #333;
+      }
+      .input-area input {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        border-radius: 6px;
+        background-color: #2d2d3f;
+        color: white;
+        outline: none;
+      }
+      .input-area button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 0 16px;
+        margin-left: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .input-area button:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chat-container">
+      <div class="chat-header">Custom AI Assistant</div>
+      <div class="chat-box" id="chatBox">
+        <div class="message bot-msg">Hello! How can I assist you today?</div>
+      </div>
+      <div class="input-area">
+        <input
+          type="text"
+          id="userInput"
+          placeholder="Type a message..."
+          onkeydown="if (event.key === 'Enter') sendMessage();"
+        />
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <script>
+      async function sendMessage() {
+        const inputField = document.getElementById("userInput");
+        const chatBox = document.getElementById("chatBox");
+        const text = inputField.value.trim();
+
+        if (!text) return;
+
+        // 1. Append User Message to UI
+        appendMessage(text, "user-msg");
+        inputField.value = "";
+
+        try {
+          // 2. Send POST Request to Flask Backend
+          const response = await fetch("http://127.0.0.1:5000/chatbot", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: text }),
+          });
+
+          const replyText = await response.text();
+
+          // 3. Append Bot Response to UI
+          appendMessage(replyText, "bot-msg");
+        } catch (error) {
+          appendMessage(
+            "Error: Could not connect to the backend server.",
+            "bot-msg",
+          );
+        }
+      }
+
+      function appendMessage(text, className) {
+        const chatBox = document.getElementById("chatBox");
+        const msgDiv = document.createElement("div");
+        msgDiv.className = `message ${className}`;
+        msgDiv.innerText = text;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to bottom
+      }
+    </script>
+  </body>
+</html>

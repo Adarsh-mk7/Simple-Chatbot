@@ -1,61 +1,88 @@
-from flask import Flask
-
-app = Flask(__name__)
-
-from flask import Flask, request
+from flask import Flask, request, render_template
 from flask_cors import CORS
 import json
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import warnings
+
+warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
-CORS(app)  # This prevents Cross-Origin Blocking errors from your web browser
+CORS(app)
 
-# Initialize the model and tokenizer 
-model_name = "facebook/blenderbot-400M-distill"
-print("Loading BlenderBot into Flask Backend...")
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+# Initialize the modern Causal Instruction Model
+model_name = "HuggingFaceTB/SmolLM2-360M-Instruct"
+print(f"Loading smart instruction model: {model_name}...")
+
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-conversation_history = []
+tokenizer.pad_token = tokenizer.unk_token
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="cpu",
+    torch_dtype=torch.float32
+)
+
+# Initialize system prompt to dictate the AI's behavior
+messages = [
+    {
+        "role": "system",
+        "content": "You are a helpful, logical AI assistant. Answer the user's questions accurately, including math and reasoning tasks."
+    }
+]
+
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('index.html')
 
 @app.route('/chatbot', methods=['POST'])
 def handle_prompt():
-    global conversation_history
+    global messages
     
-    # Read and parse JSON string from the incoming HTTP request body
-    data = request.get_data(as_text=True)
-    data = json.loads(data)
-    input_text = data['prompt']
+    # 1. Parse incoming user message
+    data = json.loads(request.get_data(as_text=True))
+    user_input = data['prompt']
 
-    # Keep only the last 6 exchanges to prevent context length overflow crashes
-    conversation_history = conversation_history[-6:]
-    history = "\n".join(conversation_history)
+    # 2. Append to structured message context
+    messages.append({"role": "user", "content": user_input})
+    
+    # 3. Maintain sliding context window (Keep system prompt + last 10 turns)
+    messages = [messages[0]] + messages[-10:]
 
-    # Tokenize input using modern safe keyword arguments
-    inputs = tokenizer(
-        text=history,
-        text_pair=input_text,
+    # 4. Apply the structural Chat Template required by causal LLMs
+    tokenized = tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
         return_tensors="pt",
-        truncation=True,
+        return_dict=True,
         max_length=512
     )
 
-    # Generate response
-    outputs = model.generate(
-        **inputs, 
-        max_new_tokens=60,
-        no_repeat_ngram_size=3,
-        repetition_penalty=1.3
-    )
+    # 5. Generate precise tokens using Causal Inference parameters
+    with torch.inference_mode():
+        outputs = model.generate(
+            tokenized["input_ids"],
+            attention_mask=tokenized["attention_mask"],
+            max_new_tokens=60,
+            temperature=0.3,          # Lower temperature = more precise factual/math tracking
+            top_p=0.85,
+            do_sample=True,
+            repetition_penalty=1.3,   # Prevents infinite repetition loops
+            no_repeat_ngram_size=3,
+            pad_token_id=tokenizer.pad_token_id
+        )
 
-    # Decode tokens back to readable plaintext
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+    # 6. Slice out the prompt tokens so it only decodes the new answer
+    response = tokenizer.decode(
+        outputs[0][tokenized["input_ids"].shape[-1]:],
+        skip_special_tokens=True
+    ).strip()
 
-    # Append to state tracking history
-    conversation_history.append(input_text)
-    conversation_history.append(response)
+    # 7. Append assistant response back to structural tracking context
+    messages.append({"role": "assistant", "content": response})
 
     return response
 
 if __name__ == '__main__':
-    # Run server locally on default port 5000
     app.run(host='127.0.0.1', port=5000, debug=True)
